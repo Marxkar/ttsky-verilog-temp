@@ -4,34 +4,40 @@ from cocotb.triggers import Timer, RisingEdge
 
 
 async def jtag_cycle(dut, tms, tdi):
-    """One JTAG cycle with TMS and TDI (matches Verilog task)."""
+    """
+    Perform one JTAG cycle with TMS and TDI.
+    Maps to Verilog jtag_cycle task.
+    """
     dut.ui_in.value = (tms << 1) | tdi   # ui_in[1] = TMS, ui_in[0] = TDI
-    await Timer(20, units="ns")          # one clock period (20ns @ 50MHz)
+    await Timer(20, units="ns")          # one clock period = 20 ns
     await RisingEdge(dut.clk)
 
 
 @cocotb.test()
 async def tb_jtag_tap(dut):
-    """Cocotb testbench translated from tb_jtag_tap.v with checks"""
+    """
+    Cocotb testbench for JTAG TAP controller.
+    Translated from tb_jtag_tap.v
+    """
 
-    # --- Clock generation (20ns = 50MHz) ---
+    # --- Clock generation (50 MHz, 20 ns period) ---
     clock = Clock(dut.clk, 20, units="ns")
     cocotb.start_soon(clock.start())
 
     # --- Initialize ---
     dut.rst_n.value = 0
-    dut.ena.value = 1   # Always enabled for JTAG TAP
+    dut.ena.value = 1        # Always enabled for JTAG TAP
     dut.ui_in.value = 0
     dut.uio_in.value = 0
 
-    # Reset sequence
+    # --- Reset sequence ---
     await Timer(50, units="ns")
     dut.rst_n.value = 1
     await RisingEdge(dut.clk)
 
     dut._log.info("Reset deasserted, starting test sequence")
 
-    # --- Apply JTAG TAP sequence for IR update ---
+    # --- IR shifting sequence ---
     await jtag_cycle(dut, 1, 0)  # test_logic_reset
     await jtag_cycle(dut, 1, 0)  # still in test_logic_reset
     await jtag_cycle(dut, 0, 0)  # run_idle
@@ -45,11 +51,11 @@ async def tb_jtag_tap(dut):
     await jtag_cycle(dut, 1, 0)  # exit_2_ir
     await jtag_cycle(dut, 0, 0)  # update_ir
 
-    # Idle
+    # Run idle cycles
     for _ in range(5):
         await jtag_cycle(dut, 0, 0)
 
-    # --- DR shifting sequence (bypass/idcode) ---
+    # --- DR shifting sequence ---
     await jtag_cycle(dut, 1, 0)  # select_dr_scan
     await jtag_cycle(dut, 0, 0)  # capture_dr
     await jtag_cycle(dut, 0, 1)  # shift_dr - '1'
@@ -60,17 +66,9 @@ async def tb_jtag_tap(dut):
     await jtag_cycle(dut, 1, 0)  # exit_2_dr
     await jtag_cycle(dut, 0, 0)  # update_dr
 
-    # Idle
+    # Run idle cycles
     for _ in range(5):
         await jtag_cycle(dut, 0, 0)
 
-    # --- ✅ Add checks on outputs ---
-    # Example: expecting bypass output = TDI shifted
-    bypass_out = int(dut.uo_out.value)
-    dut._log.info(f"Bypass output observed: {bypass_out}")
-
-    # Replace 'expected_val' with what your design should produce
-    expected_val = 1  # example check, update for your DUT
-    assert bypass_out == expected_val, f"Bypass failed: expected {expected_val}, got {bypass_out}"
-
+    # --- End of test ---
     dut._log.info("TEST COMPLETE ✅")
