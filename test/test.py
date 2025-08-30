@@ -2,6 +2,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import Timer, RisingEdge
 
+
 async def jtag_cycle(dut, tms, tdi):
     """One JTAG cycle with TMS and TDI (matches Verilog task)."""
     dut.ui_in.value = (tms << 1) | tdi   # ui_in[1] = TMS, ui_in[0] = TDI
@@ -11,10 +12,10 @@ async def jtag_cycle(dut, tms, tdi):
 
 @cocotb.test()
 async def tb_jtag_tap(dut):
-    """Cocotb testbench translated from tb_jtag_tap.v"""
+    """Cocotb testbench translated from tb_jtag_tap.v with checks"""
 
-    # --- Clock generation (forever #10 clk = ~clk) ---
-    clock = Clock(dut.clk, 20, units="ns")  # 20ns period = 50MHz
+    # --- Clock generation (20ns = 50MHz) ---
+    clock = Clock(dut.clk, 20, units="ns")
     cocotb.start_soon(clock.start())
 
     # --- Initialize ---
@@ -23,7 +24,7 @@ async def tb_jtag_tap(dut):
     dut.ui_in.value = 0
     dut.uio_in.value = 0
 
-    # Hold reset for a few cycles (#50)
+    # Reset sequence
     await Timer(50, units="ns")
     dut.rst_n.value = 1
     await RisingEdge(dut.clk)
@@ -44,7 +45,7 @@ async def tb_jtag_tap(dut):
     await jtag_cycle(dut, 1, 0)  # exit_2_ir
     await jtag_cycle(dut, 0, 0)  # update_ir
 
-    # Run idle repeat(5)
+    # Idle
     for _ in range(5):
         await jtag_cycle(dut, 0, 0)
 
@@ -59,8 +60,17 @@ async def tb_jtag_tap(dut):
     await jtag_cycle(dut, 1, 0)  # exit_2_dr
     await jtag_cycle(dut, 0, 0)  # update_dr
 
-    # Run idle repeat(5)
+    # Idle
     for _ in range(5):
         await jtag_cycle(dut, 0, 0)
 
-    dut._log.info("TEST COMPLETE")
+    # --- ✅ Add checks on outputs ---
+    # Example: expecting bypass output = TDI shifted
+    bypass_out = int(dut.uo_out.value)
+    dut._log.info(f"Bypass output observed: {bypass_out}")
+
+    # Replace 'expected_val' with what your design should produce
+    expected_val = 1  # example check, update for your DUT
+    assert bypass_out == expected_val, f"Bypass failed: expected {expected_val}, got {bypass_out}"
+
+    dut._log.info("TEST COMPLETE ✅")
